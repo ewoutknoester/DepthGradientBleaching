@@ -1,7 +1,1 @@
 Testproject
-
-print("Hello")
-
-
-
-
