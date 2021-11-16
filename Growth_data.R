@@ -1,7 +1,8 @@
 
 ###___DEPTH GRADIENT GROWTH DATA___###
 
-growth_data <- read.csv(file.choose(), header=TRUE, na.strings=c(""))
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) #Set directory at current (make sure file is saved)
+
 growth_data <- read.csv("Coral_growth_final", header=T, na.strings=c("")) 
 
 

@@ -1,0 +1,93 @@
+---
+title: "Brightness"
+author: "Ewout Knoester"
+date: "24/08/2021"
+output: html_document
+---
+
+# Setup
+```{r setup, include=FALSE}
+
+rm(list=ls()) # Clear workspace
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) #Set directory at current (make sure file is saved)
+
+library(tidyverse)
+library(ggplot2)
+```
+
+#TODO: Make a model dealing with the pseudoreplication of fragments (random effect structure), and then get the SE from here and include in the Brightness peak x Depth plot
+
+# Load and organize data
+```{r}
+
+data.raw <- read.csv("Bleaching_analyses_depth_gradient.csv", header = T, colClasses = c(Depth = "factor",
+            Fragment = "factor", Species = "factor", Date_no = "factor"))
+data.raw$Date <- as.Date(data.raw$Date, format = "%d/%m/%Y")
+data.raw$Depth <- factor(data.raw$Depth, ordered = TRUE, levels = c(1,2,3,4,5,6,7,8,9,10))
+levels(data.raw$Species) <- c("Acropora verweyi", "Pocillopora verrucosa", "Porites cylindrica")
+
+# Select relevant columns
+data.1 <- data.raw[c(2:6, 15:21)]
+# Remove Dead and Missing fragments (because don't have Brightness data)
+data.1 <- data.1[!(data.1$Cause == "Dead" | data.1$Cause == "dead" | data.1$Cause == "missing"),]
+data.1 <- data.1[-c(12, 13)]
+
+# Take average value per nursery (i.e. average of the 8 fragments)
+avg.b <- data.1  %>%  
+  group_by(Species, Depth, Date) %>% 
+  summarise(Brightness_G = mean(G.c, na.rm = TRUE))
+
+# Take average over Date, but only from start to peak of bleaching (because recovery was less accurately measured)
+startDate <- "2020-03-18"
+avg.peak <- avg.b  %>% 
+  group_by(Species, Depth) %>%
+    summarise(Brightness_G = mean(Brightness_G[Date >= startDate & Date <= Date[which.max(Brightness_G)]]))
+
+# Find minimu values (assumed non-bleaching Brightness)
+avg.min <- avg.b  %>%  
+  group_by(Species) %>% 
+  summarise(Brightness_G = min(Brightness_G, na.rm = TRUE))
+
+```
+# Plotting
+```{r}
+# Set colour scale for depth:
+cg <- c("#01ffce","#00e6d4","#00c4cc","#0096b1","#006e97","#004d7d","#003163","#001c48","#000c2e","#000314")
+
+# Brightness over Date (per Depth)
+ggplot(avg.b, aes(x = Date, y = Brightness_G, color = Depth))+
+  facet_wrap(Species ~ .)+
+  scale_color_manual(values = cg)+
+  geom_point(size=1.1) + geom_line(size = 1) + theme(axis.text.x = element_text(angle = 50, vjust = 0.5)) +
+  scale_y_continuous(name = "Brightness (bpp)", limits = c(0, 230)) + theme(text=element_text(size = 14))+
+  theme(
+    panel.spacing = unit(1, "lines"), strip.background = element_blank(),  strip.placement = "outside",
+    strip.text.x = element_text(size = 12, face = "bold.italic"),
+    axis.title.x = element_text(color="black", vjust=-0, size = 12),
+    axis.text.x = element_text(color = "black", angle = 0, size=12, face = "bold", vjust=0.5),
+    axis.title.y = element_text(color="black" , vjust=2, size = 12),
+    axis.text.y=element_text(size=12, color = "black", face = "bold", vjust=0.5),
+    panel.background = element_rect(fill = "#EFEFEF"),
+    plot.background = element_rect(fill = "#FFFFFF"),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank()
+  ) 
+
+# Brightness over Depth (averaged from start Date till peaking Date)
+# Clearer pattern and less outliers than just Depth averaged over all Dates
+ggplot(avg.peak, aes(x = Depth, y = Brightness_G))+ facet_wrap(Species ~ .)+
+  geom_point(size = 3) + scale_y_continuous(name = "Brightness (bpp)", limits = c(5, 195)) +  
+  geom_hline(data = avg.min, aes(yintercept = Brightness_G), linetype = "dashed", size = 0.6)+
+  theme(
+    panel.spacing = unit(1, "lines"), strip.background = element_blank(),  strip.placement = "outside",
+    strip.text.x = element_text(size = 13.5, face = "bold.italic"),
+    axis.title.x = element_text(color = "black", vjust = -0, size = 14),
+    axis.text.x = element_text(color = "black", angle = 0, size = 12, face = "bold", vjust = 0.5),
+    axis.title.y = element_text(color = "black" , vjust = 2, size = 14),
+    axis.text.y = element_text(size = 12, color = "black", face = "bold", vjust = 0.5),
+    panel.background = element_rect(fill = "#EFEFEF"), plot.background = element_rect(fill = "#FFFFFF"),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank()
+  ) 
+ggsave("Brightness (Depth) peak.png", width = 23, height = 8, units = "cm", dpi = 600)
+
+```
+

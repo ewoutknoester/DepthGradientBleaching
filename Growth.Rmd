@@ -1,0 +1,162 @@
+---
+title: "Growth"
+author: "Ewout Knoester"
+date: "27/08/2021"
+output: html_document
+---
+
+# Setup
+```{r setup, include=FALSE}
+
+rm(list=ls()) # Clear workspace
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) #Set directory at current (make sure file is saved)
+
+library(tidyverse)
+library(ggplot2)
+library(panelr) # Convert data from wide to long
+```
+
+# Load and organize data
+```{r}
+
+data.raw <- read.csv("Coral_growth_final.csv", header=T, na.strings=c(""),
+                        colClasses = c(Structure = "factor", Fragment = "factor", Species = "factor"))
+colnames(data.raw)[3] <- "Depth"
+data.raw$Depth <- factor(data.raw$Depth, ordered = TRUE, levels = c(1,2,3,4,5,6,7,8,9,10))
+
+# Select relevant data
+data.1 <- data.raw[(data.raw$Species != "Acropora formosa"),]
+data.1$Species <- factor(data.1$Species)
+
+# Data organizing and cleaning
+data.2l <- as.data.frame(long_panel(data.1, prefix = "_", begin = 0, end = 3, label_location = "end"))
+data.2l <- data.2l[c(5:14)]
+
+data.2l$Date <- strptime(data.2l$Date, format = "%d-%b-%y")
+data.2l$Date  <- as.Date(data.2l$Date)
+
+data.2l$EV_cm3 <- as.numeric(data.2l$EV_cm3) # No commas so this works
+
+```
+
+# SGR
+## Data selection
+
+```{r}
+# Growth (SGR) only calculated for healthy fragments (Survival = live tissue cover >= 80%)
+sgr.1l <- data.2l
+sgr.1l$EV_cm3 <- ifelse(sgr.1l$Survival < 80, NA, sgr.1l$EV_cm3)
+sgr.1l <- sgr.1l[c(1:4, 8)]
+
+# Calculate SGR
+sgr.1w <- tidyr::spread(sgr.1l, key = Date, value = EV_cm3)
+
+# Set dates and calculate difference in days
+NormalDay.sgr <- as.numeric(as.Date(colnames(sgr.1w[5])) - as.Date(colnames(sgr.1w[4])))
+HeatDay.sgr   <- as.numeric(as.Date(colnames(sgr.1w[6])) - as.Date(colnames(sgr.1w[5])))
+
+sgr.1w$Normal <- log(sgr.1w$`2020-02-25`/sgr.1w$`2019-10-30`)/ NormalDay.sgr
+sgr.1w$Heat <- log(sgr.1w$`2020-05-20`/sgr.1w$`2020-02-25`)/ HeatDay.sgr
+
+sgr.2w <- sgr.1w[c(1:3, 8, 9)]
+sgr.2l <- gather(sgr.2w, Date, SGR, "Normal":"Heat") # Long format
+
+#Averaging over fragments
+sgr.avg <- sgr.2l %>%  
+  group_by(Species, Depth, Date) %>% 
+  summarise(N = length(SGR[!is.na(SGR)]), SGR = mean(SGR, na.rm = T))
+
+sgr.avg$Nop_value <- ifelse(sgr.avg$N > 0, "", "x")
+
+```
+
+## Plotting
+```{r}
+# SGR ~ Depth x Period
+ggplot(sgr.avg, aes(x = Depth, y = SGR, colour = Date))+ facet_wrap(Species ~ .)+
+  geom_point(aes(size = sgr.avg$N))+ scale_size_continuous(range = c(0.8, 3))+
+  scale_y_continuous(name = expression(paste("SGR (", d^-1,")")),limits = c(-0.002, 0.013))+
+  scale_x_discrete(name = "Depth (m)")+
+  geom_text(data = sgr.avg, aes(x = Depth, y = min(SGR, na.rm = T), label = Nop_value), 
+            vjust= 0, hjust = 0.5, size = 2.5, fontface = "bold", position=position_dodge(.9))+
+  theme(
+    panel.spacing = unit(1, "lines"), strip.background = element_blank(),  strip.placement = "outside",
+    strip.text.x = element_text(size = 13.5, face = "bold.italic"),
+    axis.title.x = element_text(color = "black", vjust = -0, size = 14),
+    axis.text.x = element_text(color = "black", angle = 0, size = 12, face = "bold", vjust = 0.5),
+    axis.title.y = element_text(color = "black" , vjust = 2, size = 14),
+    axis.text.y = element_text(size = 12, color = "black", face = "bold", vjust = 0.5),
+    panel.background = element_rect(fill = "#EFEFEF"), plot.background = element_rect(fill = "#FFFFFF"),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+    legend.position = "none"
+  ) 
+ggsave("SGR (Depth X Period).png", width = 23, height = 8, units = "cm", dpi = 600)
+```
+# Production
+## Data selection
+```{r}
+
+ev.1l <- data.2l[c(1:4, 8:10)]
+ev.1l$Comments <- ifelse(is.na(ev.1l$Comments), "", ev.1l$Comments)
+
+#! CHOICE to only set DEAD comments to 0, not Missing ones (thus excluding missing fragments)
+ev.2l <- ev.1l
+ev.2l$EV_cm3 <- ifelse(ev.2l$Comments == "Dead" , 0, ev.2l$EV_cm3) # | ev.2l$Comments == "Missing" 
+ev.2l <- ev.2l[1:5]
+
+# Wide format to facilitate standardization calculations (includes NA where frags went missing)
+ev.2w <- tidyr::spread(ev.2l, key = Date, value = EV_cm3)
+
+#! CHOICE selection of dates for NORMAL and HEAT stress period
+ev.2w <- ev.2w[, c("Depth", "Fragment", "Species", "2019-10-30", "2020-02-25", "2020-05-20")]
+
+# Duration of measurement interval
+NormalDay.ev <- as.numeric(as.Date(colnames(sgr.1w[5])) - as.Date(colnames(sgr.1w[4])))
+HeatDay.ev   <- as.numeric(as.Date(colnames(sgr.1w[6])) - as.Date(colnames(sgr.1w[5])))
+
+# Calculation of SGR
+ev.2w$Normal_SGR <- log(ev.2w$`2020-02-25`/ev.2w$`2019-10-30`)/NormalDay.ev
+ev.2w$Heat_SGR <- log(ev.2w$`2020-05-20`/ev.2w$`2020-02-25`)/HeatDay.ev
+
+# Calculation of EV, standardized to max measurement interval
+MaxDay.ev <- pmax(NormalDay.ev, HeatDay.ev) # Maybe standardize to a year (365) to facilitate future comparisons?
+
+ev.2w$Normal_EV <- ev.2w$`2019-10-30` * exp(ev.2w$Normal_SGR * MaxDay.ev)
+ev.2w$Heat_EV <- ev.2w$`2020-02-25` * exp(ev.2w$Heat_SGR * MaxDay.ev)
+
+# Calculation of Production (% increase in EV)
+ev.2w$Normal_P <- (ev.2w$Normal_EV / ev.2w$`2019-10-30`) * 100
+ev.2w$Heat_P <- (ev.2w$Heat_EV / ev.2w$`2020-02-25`) * 100
+
+ev.3w <- ev.2w[c(1:3, 11, 12)]
+ev.3l <- gather(ev.3w, Date, Production, "Normal_P":"Heat_P") # Long format
+
+ev.avg <- ev.3l %>%  
+  group_by(Species, Depth, Date) %>% 
+  summarise(N = length(Production[!is.na(Production)]), Production = mean(Production, na.rm = T))
+```
+
+# Plotting
+```{r}
+# SGR ~ Depth x Period
+ggplot(ev.avg, aes(x = Depth, y = Production, colour = Date))+ facet_wrap(Species ~ .)+
+  geom_hline(aes(yintercept = 100), linetype = "dashed", size = 0.6)+
+  geom_point(aes(size = 3))+ scale_size_continuous(range = c(0.8, 3))+
+  scale_y_continuous(name = "Production (%)",limits = c(0, 300))+
+  scale_x_discrete(name = "Depth (m)")+
+  theme(
+    panel.spacing = unit(1, "lines"), strip.background = element_blank(),  strip.placement = "outside",
+    strip.text.x = element_text(size = 13.5, face = "bold.italic"),
+    axis.title.x = element_text(color = "black", vjust = -0, size = 14),
+    axis.text.x = element_text(color = "black", angle = 0, size = 12, face = "bold", vjust = 0.5),
+    axis.title.y = element_text(color = "black" , vjust = 2, size = 14),
+    axis.text.y = element_text(size = 12, color = "black", face = "bold", vjust = 0.5),
+    panel.background = element_rect(fill = "#EFEFEF"), plot.background = element_rect(fill = "#FFFFFF"),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+    legend.position = "none"
+  ) 
+ggsave("Production (Depth X Period).png", width = 23, height = 8, units = "cm", dpi = 600)
+
+```
+
+

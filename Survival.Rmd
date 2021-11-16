@@ -1,0 +1,115 @@
+---
+title: "Survival"
+author: "Ewout Knoester"
+date: "24/08/2021"
+output: html_document
+---
+
+# Setup
+```{r setup, include=FALSE}
+
+rm(list=ls()) # Clear workspace
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) #Set directory at current (make sure file is saved)
+
+library(tidyverse)
+library(ggplot2)
+library(panelr) # Convert data from wide to long
+```
+
+# Load and organize data
+```{r}
+
+## During heat stress only (weekly interval)
+data.b.raw <- read.csv("Bleaching_analyses_depth_gradient.csv", header = T, colClasses = c(Depth = "factor",
+            Fragment = "factor", Species = "factor", Date_no = "factor"))
+data.b.raw$Date <- as.Date(data.b.raw$Date, format = "%d/%m/%Y")
+data.b.raw$Depth <- factor(data.b.raw$Depth, ordered = TRUE, levels = c(1,2,3,4,5,6,7,8,9,10))
+levels(data.b.raw$Species) <- c("Acropora verweyi", "Pocillopora verrucosa", "Porites cylindrica")
+
+# Select relevant data
+data.b1 <- data.b.raw[c(2:4, 6, 19:20)]
+
+## Over the whole year (quarter monthly interval)
+data.y.raw <- read.csv("Coral_growth_final.csv", header = T, colClasses = c(Structure = "factor",
+            Fragment = "factor", Species = "factor"))
+data.y.raw$Structure <- factor(data.y.raw$Structure, ordered = TRUE, levels = c(1,2,3,4,5,6,7,8,9,10))
+colnames(data.y.raw)[3] <- "Depth"
+
+# Select relevant data
+data.y1 <- data.y.raw[c(2:6, 11, 12, 13, 18, 19, 20, 25, 26, 27, 32, 33)]
+data.y1 <- data.y1[(data.y1$Species != "Acropora formosa"),]
+data.y1$Species <- factor(data.y1$Species)
+
+# Data organizing and cleaning
+data.y2 <- as.data.frame(long_panel(data.y1, prefix = "_", begin = 0, end = 3, label_location = "end"))
+# Set date in right format
+data.y2$Date <- strptime(data.y2$Date, format = "%d-%b-%y")
+data.y2$Date  <- as.Date(data.y2$Date)
+data.y2 <- data.y2[4:9]
+colnames(data.y2)[6] <- "Cause"
+
+## Merge two data sets (combine weekly & quarter-yearly interval data)
+merged <- rbind(data.b1, data.y2)
+merged$Cause <- toupper(merged$Cause) # Caps Cause to remove variation in caps & small
+
+```
+
+# Data selection
+```{r}
+
+# Prepare choice between data set with or without missing fragments:
+merged.a <- merged[1:5] # Data set INCLUDING ALL fragments (survival of both dead and missing set at 0)
+merged.m <- subset(merged, Cause != "MISSING") # Data set EXCLUDING MISSING fragments (all 0s are dead only)
+merged.m <- merged.m[1:5]
+
+#! CHOICE for excluding missing fragments (reasons for missing irrelevant to depth/experiment)
+data.choice_missing <- merged.m # data.a = all fragments, data.m = excluding missing
+rm(merged.a, merged.m)
+
+# Wide format to facilitate standardization calculations (includes NA where frags went missing)
+merged.w <- tidyr::spread(data.choice_missing, key = Date, value = Survival)
+
+#! CHOICE selection of dates for NORMAL and HEAT stress period
+merged.w1 <- merged.w[, c("Depth", "Fragment", "Species", "2019-10-30", "2020-03-18", "2020-07-15")]
+
+# Prepare choice for standardization
+names(merged.w1) <- c("Depth", "Fragment", "Species", "Start", "Normal", "Heat")
+merged.w1$Normal.c <- merged.w1$Normal/merged.w1$Start*100
+merged.w1$Heat.c <- merged.w1$Heat/merged.w1$Normal*100
+merged.w1$Normal.c[is.nan(merged.w1$Normal.c)] <- 0 # If start survival 0, then also end survival 0
+merged.w1$Heat.c[is.nan(merged.w1$Heat.c)] <- 0 # If start survival 0, then also end survival 0
+
+merged.l <- gather(merged.w1, Date, Survival, "Start":"Heat.c") # Long format
+
+#! CHOICE for standardized dates (start survival set to 100, for both start of normal and bleaching period)
+merged.l2  <- subset(merged.l, Date == "Normal.c" | Date == "Heat.c") # .c for standardized data, without without
+merged.l2 <- na.omit(merged.l2)
+
+# AVERAGE over fragments
+merged.avg <- merged.l2  %>%  
+  group_by(Species, Depth, Date) %>% 
+  summarise(Survival = mean(Survival))
+
+```
+
+
+# Plotting
+```{r}
+
+# Survival ~ Depth x Period (no missing & corrected data)
+ggplot(merged.avg, aes(x = Depth, y = Survival, colour = Date))+ facet_wrap(Species ~ .)+
+  geom_point(size = 3) + scale_y_continuous(name = "Live tissue cover (%)", limits = c(0, 100)) +  
+  theme(
+    panel.spacing = unit(1, "lines"), strip.background = element_blank(),  strip.placement = "outside",
+    strip.text.x = element_text(size = 13.5, face = "bold.italic"),
+    axis.title.x = element_text(color = "black", vjust = -0, size = 14),
+    axis.text.x = element_text(color = "black", angle = 0, size = 12, face = "bold", vjust = 0.5),
+    axis.title.y = element_text(color = "black" , vjust = 2, size = 14),
+    axis.text.y = element_text(size = 12, color = "black", face = "bold", vjust = 0.5),
+    panel.background = element_rect(fill = "#EFEFEF"), plot.background = element_rect(fill = "#FFFFFF"),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank()
+  ) 
+ggsave("Survival (Depth X Period) (no missing x corrected).png", width = 23, height = 8, units = "cm", dpi = 600)
+
+```
+
