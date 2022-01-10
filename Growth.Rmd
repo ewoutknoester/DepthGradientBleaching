@@ -5,21 +5,24 @@ date: "27/08/2021"
 output: html_document
 ---
 
+#TODO: Make a model dealing with the pseudoreplication of fragments (random effect structure), and then get the SE/marginal effects from here and include in the Growth & Production plots
+
 # Setup
 ```{r setup, include=FALSE}
 
 rm(list=ls()) # Clear workspace
-setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) #Set directory at current (make sure file is saved)
+knitr::opts_knit$set(root.dir = '/tmp') #Set directory at current directory for all subsequent chunks
 
 library(tidyverse)
 library(ggplot2)
 library(panelr) # Convert data from wide to long
+library(NCmisc) # Check packages used
 ```
 
 # Load and organize data
 ```{r}
 
-data.raw <- read.csv("Coral_growth_final.csv", header=T, na.strings=c(""),
+data.raw <- read.csv("Depth_gradient_size_survival.csv", header=T, na.strings=c(""),
                         colClasses = c(Structure = "factor", Fragment = "factor", Species = "factor"))
 colnames(data.raw)[3] <- "Depth"
 data.raw$Depth <- factor(data.raw$Depth, ordered = TRUE, levels = c(1,2,3,4,5,6,7,8,9,10))
@@ -159,4 +162,12 @@ ggsave("Production (Depth X Period).png", width = 23, height = 8, units = "cm", 
 
 ```
 
+# Check packages used
+```{r}
+
+knitr::purl("Growth.Rmd")
+list.functions.in.file("Growth.R")
+unlink("Growth.R")
+
+```
 

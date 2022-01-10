@@ -5,22 +5,25 @@ date: "24/08/2021"
 output: html_document
 ---
 
+#TODO: Make a model dealing with the pseudoreplication of fragments (random effect structure) & fraction (beta regression), and then get the SE from here and include in the Survival plot
+
 # Setup
 ```{r setup, include=FALSE}
 
 rm(list=ls()) # Clear workspace
-setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) #Set directory at current (make sure file is saved)
+knitr::opts_knit$set(root.dir = '/tmp') #Set directory at current directory for all subsequent chunks
 
 library(tidyverse)
 library(ggplot2)
 library(panelr) # Convert data from wide to long
+library(NCmisc) # Check packages used
 ```
 
 # Load and organize data
 ```{r}
 
 ## During heat stress only (weekly interval)
-data.b.raw <- read.csv("Bleaching_analyses_depth_gradient.csv", header = T, colClasses = c(Depth = "factor",
+data.b.raw <- read.csv("depth_gradient_bleaching.csv", header = T, colClasses = c(Depth = "factor",
             Fragment = "factor", Species = "factor", Date_no = "factor"))
 data.b.raw$Date <- as.Date(data.b.raw$Date, format = "%d/%m/%Y")
 data.b.raw$Depth <- factor(data.b.raw$Depth, ordered = TRUE, levels = c(1,2,3,4,5,6,7,8,9,10))
@@ -30,7 +33,7 @@ levels(data.b.raw$Species) <- c("Acropora verweyi", "Pocillopora verrucosa", "Po
 data.b1 <- data.b.raw[c(2:4, 6, 19:20)]
 
 ## Over the whole year (quarter monthly interval)
-data.y.raw <- read.csv("Coral_growth_final.csv", header = T, colClasses = c(Structure = "factor",
+data.y.raw <- read.csv("depth_gradient_size_survival.csv", header = T, colClasses = c(Structure = "factor",
             Fragment = "factor", Species = "factor"))
 data.y.raw$Structure <- factor(data.y.raw$Structure, ordered = TRUE, levels = c(1,2,3,4,5,6,7,8,9,10))
 colnames(data.y.raw)[3] <- "Depth"
@@ -110,6 +113,15 @@ ggplot(merged.avg, aes(x = Depth, y = Survival, colour = Date))+ facet_wrap(Spec
     panel.grid.major = element_blank(), panel.grid.minor = element_blank()
   ) 
 ggsave("Survival (Depth X Period) (no missing x corrected).png", width = 23, height = 8, units = "cm", dpi = 600)
+
+```
+
+# Check packages used
+```{r}
+
+knitr::purl("Growth.Rmd")
+list.functions.in.file("Growth.R")
+unlink("Growth.R")
 
 ```
 
